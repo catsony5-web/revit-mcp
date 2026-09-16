@@ -15,7 +15,7 @@ $addinsDir= Join-Path $PSScriptRoot 'artifacts\2024'
 $outDir   = Join-Path $addinsDir 'RevitMcp'
 $outDll   = Join-Path $outDir 'RevitMcp.dll'
 
-# Roslyn 및 의존 DLL을 가져올 곳 (기존 플러그인이 동봉한 Microsoft 서명 파일들)
+# Roslyn 및 의존 DLL을 가져올 곳 (restore-dependencies.ps1 또는 사용자 지정 폴더)
 $roslynSrc = (Resolve-Path -LiteralPath $RoslynDir).Path
 $roslynDlls = @(
     'Microsoft.CodeAnalysis.dll',
@@ -59,7 +59,7 @@ foreach ($f in $sources) {
 }
 Write-Host ("소스 {0}개 (BOM 보정 {1}개)" -f $sources.Count, $fixed)
 
-# 2) Roslyn 및 의존 DLL 복사 (없으면 경고만 하고 계속 — CodeDom 으로 대체 동작)
+# 2) 앞에서 존재 여부를 검사한 Roslyn 및 의존 DLL 복사
 $roslynOk = $true
 if (Test-Path $roslynSrc) {
     foreach ($d in $roslynDlls) {
@@ -79,6 +79,13 @@ if ($roslynOk) {
     Write-Host 'Roslyn 복사 완료 - 사용자 코드는 최신 C# 로 컴파일됩니다.' -ForegroundColor Green
 } else {
     Write-Warning '사용자 코드가 C# 5 (CodeDom) 로만 컴파일됩니다.'
+}
+
+$dependencyLicenses = Join-Path $roslynSrc 'licenses'
+if (Test-Path -LiteralPath $dependencyLicenses) {
+    $outputLicenses = Join-Path $outDir 'licenses'
+    New-Item -ItemType Directory -Force -Path $outputLicenses | Out-Null
+    Get-ChildItem -LiteralPath $dependencyLicenses -File | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $outputLicenses -Force }
 }
 
 # 3) 컴파일

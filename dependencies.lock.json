@@ -1,0 +1,62 @@
+[
+  {
+    "id": "microsoft.codeanalysis.common",
+    "version": "4.8.0",
+    "entry": "lib/netstandard2.0/Microsoft.CodeAnalysis.dll",
+    "sha256": "dc81229d54d9abafda6a331503c5d344edcb4c812dd0fba11b22131892edab3e"
+  },
+  {
+    "id": "microsoft.codeanalysis.csharp",
+    "version": "4.8.0",
+    "entry": "lib/netstandard2.0/Microsoft.CodeAnalysis.CSharp.dll",
+    "sha256": "3263a75c9bddfdecece543dcab218b9db673e66f9579da517c1fa415979eaa45"
+  },
+  {
+    "id": "system.collections.immutable",
+    "version": "7.0.0",
+    "entry": "lib/netstandard2.0/System.Collections.Immutable.dll",
+    "sha256": "f5a9f6c1bc6e7b6aabb6e818112f5ac2c85083e29f26a6a386786ce3991021d9"
+  },
+  {
+    "id": "system.reflection.metadata",
+    "version": "7.0.0",
+    "entry": "lib/netstandard2.0/System.Reflection.Metadata.dll",
+    "sha256": "1b000a4219213c1613aa645d1bd73db5aaab292283c325203848562cac5634f2"
+  },
+  {
+    "id": "system.runtime.compilerservices.unsafe",
+    "version": "6.0.0",
+    "entry": "lib/netstandard2.0/System.Runtime.CompilerServices.Unsafe.dll",
+    "sha256": "6c41b53e70e9eee298cff3a02ce5acdd15b04125589be0273f0566026720a762"
+  },
+  {
+    "id": "system.memory",
+    "version": "4.5.5",
+    "entry": "lib/netstandard2.0/System.Memory.dll",
+    "sha256": "10f43da352a29fb2b3188e4edd4dcf5100194c8b526e4f61fe2e2b5623775a22"
+  },
+  {
+    "id": "system.buffers",
+    "version": "4.5.1",
+    "entry": "lib/netstandard2.0/System.Buffers.dll",
+    "sha256": "c30b3dd2c7e2f4cee4b823d692fd42118309b42ab1f5007f923d329a5b0d6b12"
+  },
+  {
+    "id": "system.numerics.vectors",
+    "version": "4.5.0",
+    "entry": "lib/netstandard2.0/System.Numerics.Vectors.dll",
+    "sha256": "a9d49320581fda1b4f4be6212c68c01a22cdf228026099c20a8eabefcf90f9cf"
+  },
+  {
+    "id": "system.threading.tasks.extensions",
+    "version": "4.5.4",
+    "entry": "lib/netstandard2.0/System.Threading.Tasks.Extensions.dll",
+    "sha256": "a304a963cc0796c5179f9c6b7d8022bbce3b2fa7c029eb6196f631f7b462d678"
+  },
+  {
+    "id": "system.text.encoding.codepages",
+    "version": "7.0.0",
+    "entry": "lib/netstandard2.0/System.Text.Encoding.CodePages.dll",
+    "sha256": "782293570ba60f4e7564472825c0d54469c8180b04bcaa5f1f7c9d2a5b87c66a"
+  }
+]

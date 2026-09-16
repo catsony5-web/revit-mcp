@@ -6,7 +6,25 @@ Revit 애드인 안에서 HTTP MCP 서버를 직접 실행하는 C# 프로젝트
 MCP 클라이언트 → http://127.0.0.1:8090/mcp → RevitMcp.dll → Revit API
 ```
 
-**공개 상태: 개발자용 소스 배포.** Windows / Revit 2024 대상으로 작성되었습니다. 이번 공개 준비에서는 오프라인 빌드와 프로토콜 검사를 수행하며, 사용자 PC의 신규 설치와 실제 모델 동작은 별도 검증 대상입니다. 상세 결과는 [검증 기록](docs/VALIDATION.md)을 확인하세요. Autodesk의 공식 제품이 아닙니다.
+**Windows / Revit 2024용 소스와 설치 스크립트입니다.** HTTPS로 복제하거나 ZIP을 내려받고 `setup.ps1 -Install`을 실행하면 의존성 준비·빌드·검사·설치를 진행합니다. Revit 자체는 별도로 설치되어 있어야 합니다. 다른 PC의 Revit 실제 동작은 별도 검증 대상입니다. 상세 결과는 [검증 기록](docs/VALIDATION.md)을 확인하세요. Autodesk의 공식 제품이 아닙니다.
+
+## 빠른 시작 — Code → HTTPS
+
+Git이 설치되어 있다면 PowerShell에서 다음을 실행하세요. 먼저 Revit 작업을 저장하고 모든 Revit 창을 종료합니다.
+
+```powershell
+git clone https://github.com/catsony5-web/revit-mcp.git
+cd revit-mcp
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -Install
+```
+
+Git이 없다면 **Code → Download ZIP**을 내려받아 압축을 풀고, 해당 폴더에서 마지막 명령을 실행하면 됩니다. Fork는 자신의 GitHub 계정에 저장소 사본을 만드는 기능이며 설치에 필수는 아닙니다.
+
+설치 후 Revit을 실행하고 `부가 기능 > MCP`에서 서버를 확인한 뒤, AI 클라이언트의 HTTP MCP 주소에 **`http://127.0.0.1:8090/mcp`**를 등록하세요. 클라이언트 연결 예시는 [examples/mcp-http.json](examples/mcp-http.json)에 있습니다. 클라이언트의 개인 설정 파일을 자동으로 덮어쓰지는 않습니다.
+
+첫 준비에는 `api.nuget.org`에 연결 가능한 인터넷이 필요합니다. Python, Node.js, Visual Studio, 별도 .NET SDK는 필요하지 않습니다. Revit 2024 설치본과 Windows PowerShell 5.1, Windows .NET Framework 컴파일러를 사용합니다.
+
+`setup.ps1`만 실행하면 빌드·검사까지만 수행합니다. `-Install`일 때만 애드인 설치 폴더에 쓰며, Revit이 실행 중이면 설치를 중단합니다. 업그레이드는 기존 애드인을 이 저장소의 `backups/`에 보관하고 개인 설정·로컬 데이터를 유지합니다.
 
 ## 주요 기능
 
@@ -21,7 +39,7 @@ MCP 클라이언트 → http://127.0.0.1:8090/mcp → RevitMcp.dll → Revit API
 
 ## 빌드
 
-Windows PowerShell 5.1, Revit 2024 설치본, Microsoft Roslyn 의존 DLL이 필요합니다. [빌드 의존성 안내](docs/BUILD.md)에 따라 DLL을 준비한 뒤 실행합니다.
+일반 사용자는 `setup.ps1`으로 자동 준비할 수 있습니다. 의존성을 직접 준비하려면 [빌드 의존성 안내](docs/BUILD.md)를 참고하세요.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -RoslynDir 'C:\Dependencies\Roslyn'
@@ -34,7 +52,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test-protocol.ps1
 
 1. Revit 작업을 저장하고 모든 Revit 창을 종료합니다.
 2. 같은 이름의 기존 애드인이 있다면 `RevitMcp` 폴더와 `RevitMcp.addin`을 별도 보관합니다.
-3. `artifacts/2024/RevitMcp/`와 `artifacts/2024/RevitMcp.addin`을 `%APPDATA%\Autodesk\Revit\Addins\2024\`에 복사합니다. 업그레이드할 때 기존 `revitmcp.config.json`, `RevitMcpData`, `RevitMcpLogs`는 보존합니다.
+3. `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`을 실행합니다. 설치 위치는 `%APPDATA%\Autodesk\Revit\Addins\2024\`입니다. 기존 `revitmcp.config.json`, `RevitMcpData`, `RevitMcpLogs`는 보존합니다. 복사 계획만 확인하려면 `-WhatIf`를 붙이세요.
 4. Revit을 실행하고 `부가 기능 > MCP`에서 서버 상태를 확인합니다.
 5. HTTP MCP를 지원하는 클라이언트에 `http://127.0.0.1:8090/mcp`를 등록합니다. JSON 구성 예시는 [examples/mcp-http.json](examples/mcp-http.json)이며, 실제 설정 형식은 클라이언트마다 다릅니다.
 
@@ -75,3 +93,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test-protocol.ps1
 기존 로컬 `RevitMcp` 소스를 공개용으로 정리했습니다. `RevitPilot`과 병렬 worker 개발판은 별도 프로젝트이며 포함하지 않습니다. [mcp-servers-for-revit](https://github.com/mcp-servers-for-revit/mcp-servers-for-revit)과 일부 도구 이름·사용 목적이 겹치지만, 이 저장소의 서버는 Revit 애드인 내부에서 직접 HTTP 요청을 처리합니다.
 
 업무 모델·실행 로그·프로젝트 데이터·개인 설정은 포함하지 않습니다. 출처 및 이용 조건은 [NOTICE.md](NOTICE.md)를 참고하세요.
+
+[다른 Revit MCP와의 비교](docs/COMPARISON.md)에서는 서버 구조·설치·도구와 검증 범위를 구분합니다.

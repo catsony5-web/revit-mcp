@@ -5,7 +5,10 @@
 | 검사 | 결과 |
 |---|---|
 | Revit 2024 API를 참조한 C# 소스 20개 컴파일 | 통과 |
-| 공개용 PowerShell 스크립트 3개 구문 | 통과 |
+| 공개용 PowerShell 스크립트 7개 구문 | 통과 |
+| 공식 NuGet 의존 패키지 10개 및 SHA-256 검증 | 통과 |
+| setup.ps1 자동 의존성 준비·빌드·검사 | 통과 (`-Install` 없이 실행) |
+| 설치 스크립트 파일시스템 모의 검사 | 10개 통과 (별도 가짜 애드인 폴더) |
 | 프로토콜 검사 | 16개 통과 |
 | 등록 도구 수 | 29개 |
 | 도구 이름·설명·객체 스키마·중복 이름 검사 | 통과 |
@@ -15,15 +18,17 @@
 
 빌드 산출물은 저장소 내부 `artifacts/2024/`에 생성했고, 설치 폴더에는 쓰지 않았습니다. 프로토콜 검사는 별도 PowerShell 프로세스에서 DLL을 불러 실행했으며 열린 Revit이나 MCP 서버에 접속하지 않았습니다. 검사에서 생성된 로그와 DLL은 Git 추적에서 제외합니다.
 
-공개 준비 중 런타임 C# 구현은 변경하지 않았습니다. 빌드 출력 위치·의존성 입력을 정리하고, 프로토콜 검사 대상을 로컬 빌드 산출물로 바꾸었습니다. 라이브 검사에는 명시적 `-AllowLiveTest` 옵션을 추가했습니다.
+공개 준비 중 런타임 C# 구현은 변경하지 않았습니다. 빌드 출력 위치·의존성 입력을 정리하고, 프로토콜 검사 대상을 로컬 빌드 산출물로 바꾸었습니다. 라이브 검사에는 명시적 `-AllowLiveTest` 옵션을 추가했습니다. 자동 의존성 준비와 설치 스크립트를 추가해 기존 다른 MCP 설치가 없어도 소스를 빌드할 수 있게 했습니다.
+
+설치 모의 검사는 `artifacts/tests/`에 가짜 DLL·설정·대상 폴더를 만들고 수행했습니다. WhatIf 무변경, 실행 중인 Revit 조건에서 설치 거절, 신규 DLL·매니페스트 복사, 업그레이드, 설정·데이터·다른 애드인 보존, 백업 생성·이전 DLL 보존을 확인했습니다. 실제 설치 폴더는 변경하지 않았습니다.
 
 개인 홈 경로·프로젝트 이름·일반적인 토큰/키 패턴을 공개 대상 텍스트에서 검사했습니다. 업무 모델·로그·설정·로컬 데이터·제3자 DLL은 배포 범위에 포함하지 않았습니다. 이 검사는 전체 보안 감사나 모든 MCP 클라이언트 호환성 인증이 아닙니다.
 
 ## 재현
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -RoslynDir 'C:\Dependencies\Roslyn'
-powershell -NoProfile -ExecutionPolicy Bypass -File .\test-protocol.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\test-install.ps1
 ```
 
 의존 DLL 준비는 [BUILD.md](BUILD.md)를 참고하세요. 실제 모델 도구 검증은 별도의 시험 모델을 준비한 뒤 수행해야 합니다.

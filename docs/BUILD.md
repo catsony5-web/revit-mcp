@@ -4,7 +4,9 @@
 
 `-RevitDir` 기본값은 `%ProgramFiles%\Autodesk\Revit 2024`입니다. 이 폴더의 `RevitAPI.dll`, `RevitAPIUI.dll`, `Newtonsoft.Json.dll`을 참조합니다. Autodesk DLL은 복사·재배포하지 않습니다.
 
-`-RoslynDir`로 아래 파일이 모두 있는 폴더를 지정합니다. 이미 보유한 정상 설치본의 의존성 폴더 또는 Microsoft의 NuGet 패키지에서 준비한 파일을 사용할 수 있습니다. 파일은 일치하는 버전 조합으로 준비하세요.
+`setup.ps1`은 `restore-dependencies.ps1`으로 Microsoft NuGet 패키지 10개를 내려받고 `dependencies.lock.json`의 SHA-256을 검사한 뒤 필요한 DLL을 `deps/roslyn/`에 준비합니다. 다른 Revit MCP가 설치되어 있을 필요가 없습니다. 버전은 명시적으로 고정되어 있으며 임의로 최신 버전으로 올라가지 않습니다. 패키지에 들어 있는 텍스트 라이선스도 함께 보관합니다.
+
+오프라인 수동 빌드를 원하면 `-RoslynDir`로 아래 파일이 모두 있는 폴더를 지정합니다. 이미 보유한 정상 설치본의 의존성 폴더 또는 Microsoft의 NuGet 패키지에서 준비한 파일을 사용할 수 있습니다. 파일은 일치하는 버전 조합으로 준비하세요.
 
 | DLL | 원본 환경에서 확인한 제품 버전 |
 |---|---|
@@ -19,7 +21,7 @@
 | System.Threading.Tasks.Extensions.dll | 4.6.28619.01 |
 | System.Text.Encoding.CodePages.dll | 7.0.22.51805 |
 
-Roslyn의 패키지는 `Microsoft.CodeAnalysis.CSharp` 4.8.0 계열입니다. 위 표는 DLL 제품 버전으로, NuGet 패키지 버전과 표기가 다를 수 있습니다. 저장소에는 의존 DLL을 포함하거나 자동 다운로드하지 않습니다.
+Roslyn의 패키지는 `Microsoft.CodeAnalysis.CSharp` 4.8.0 계열입니다. 위 표는 DLL 제품 버전으로, NuGet 패키지 버전과 표기가 다를 수 있습니다. Git 저장소에는 의존 DLL을 포함하지 않으며 자동 준비 스크립트가 공식 NuGet에서 다운로드합니다. 의존성 근거: [Microsoft.CodeAnalysis.Common 4.8.0](https://www.nuget.org/packages/Microsoft.CodeAnalysis.Common/4.8.0#dependencies-body-tab).
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -RoslynDir 'C:\Dependencies\Roslyn'

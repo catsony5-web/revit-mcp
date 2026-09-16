@@ -3,6 +3,7 @@ bin/
 obj/
 packages/
 deps/
+backups/
 .vs/
 .env
 .env.*
