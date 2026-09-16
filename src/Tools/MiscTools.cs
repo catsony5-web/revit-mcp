@@ -31,7 +31,7 @@ namespace RevitMcp.Tools
                     .Enum("transactionMode",
                           "auto = 트랜잭션을 열어주고 끝나면 커밋한다 (기본). " +
                           "manual = 코드가 직접 트랜잭션을 관리한다. 대량 작업을 나눠 커밋할 때 쓴다. " +
-                          "none = 트랜잭션 없이 읽기만 한다.",
+                          "none = 서버가 트랜잭션을 열지 않는다. 읽기 전용 권한을 강제하지 않는다.",
                           new string[] { "auto", "manual", "none" }, "auto")
                     .Str("transactionName", "실행 취소 목록에 남길 트랜잭션 이름 (auto 일 때만 쓰인다)")
                     .Int("timeoutMs", "이 호출의 제한 시간(밀리초). 오래 걸리는 작업이면 늘린다. 상한은 서버 설정을 따른다."),

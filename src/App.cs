@@ -17,7 +17,7 @@ namespace RevitMcp
                 Config.Load();
                 Log.Info("=== Revit MCP 애드인 시작 (Revit " + a.ControlledApplication.VersionNumber + ") ===");
 
-                Dispatcher.Initialize();
+                Dispatcher.Initialize(a);
                 Tools.AllTools.RegisterAll();
                 Log.Info("도구 " + ToolRegistry.Count + "개 등록 완료");
 
@@ -45,6 +45,7 @@ namespace RevitMcp
 
         public Result OnShutdown(UIControlledApplication a)
         {
+            Dispatcher.Shutdown(a);
             try { if (Server != null) Server.Stop(); }
             catch (Exception ex) { Log.Error("서버 정지 실패", ex); }
             return Result.Succeeded;

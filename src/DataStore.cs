@@ -24,7 +24,7 @@ namespace RevitMcp
                     string baseDir = Path.GetDirectoryName(
                         System.Reflection.Assembly.GetExecutingAssembly().Location);
                     _root = Path.Combine(baseDir, "RevitMcpData");
-                    try { Directory.CreateDirectory(_root); } catch { }
+                    Directory.CreateDirectory(_root);
                 }
                 return _root;
             }
@@ -47,14 +47,14 @@ namespace RevitMcp
                 try
                 {
                     string text = File.ReadAllText(path, Encoding.UTF8);
-                    if (string.IsNullOrWhiteSpace(text)) return new JArray();
+                    if (string.IsNullOrWhiteSpace(text)) throw new IOException("Stored data is empty or truncated.");
                     JArray arr = JArray.Parse(text);
                     return arr;
                 }
                 catch (Exception ex)
                 {
                     Log.Error("저장소 읽기 실패: " + collection, ex);
-                    return new JArray();
+                    throw new IOException("Stored data is unreadable; refusing to replace it with an empty collection: " + collection, ex);
                 }
             }
         }
@@ -63,13 +63,23 @@ namespace RevitMcp
         {
             lock (_gate)
             {
-                File.WriteAllText(PathFor(collection), arr.ToString(Formatting.Indented), new UTF8Encoding(false));
+                string path = PathFor(collection);
+                string temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                try
+                {
+                    byte[] bytes = Encoding.UTF8.GetBytes(arr.ToString(Formatting.Indented));
+                    using (FileStream stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { stream.Write(bytes, 0, bytes.Length); stream.Flush(true); }
+                    if (File.Exists(path)) File.Replace(temp, path, path + ".bak"); else File.Move(temp, path);
+                }
+                finally { if (File.Exists(temp)) File.Delete(temp); }
             }
         }
 
         // 같은 key 가 있으면 덮어쓰고, 없으면 추가한다. 돌려주는 값은 (추가됨 여부).
         public static bool Put(string collection, string key, JToken value, JObject meta)
         {
+            lock (_gate)
+            {
             JArray arr = Load(collection);
             JObject record = new JObject();
             record["key"] = key;
@@ -94,10 +104,13 @@ namespace RevitMcp
             arr.Add(record);
             Save(collection, arr);
             return true;
+            }
         }
 
         public static int Delete(string collection, string key)
         {
+            lock (_gate)
+            {
             JArray arr = Load(collection);
             int removed = 0;
             for (int i = arr.Count - 1; i >= 0; i--)
@@ -112,6 +125,7 @@ namespace RevitMcp
             }
             if (removed > 0) Save(collection, arr);
             return removed;
+            }
         }
 
         public static List<string> Collections()

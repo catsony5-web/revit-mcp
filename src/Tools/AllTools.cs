@@ -4,6 +4,10 @@
     {
         public static void RegisterAll()
         {
+            SessionTools.Register();
+            AnalysisTools.Register();
+            ClashTools.Register();
+            CadTools.Register();
             ViewTools.Register();
             QueryTools.Register();
             MiscTools.Register();
