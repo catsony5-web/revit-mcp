@@ -10,7 +10,7 @@ namespace RevitMcp
     internal static class McpProtocol
     {
         public const string ServerName = "revit-mcp";
-        public const string ServerVersion = "1.0.0";
+        public const string ServerVersion = "2.0.0-preview.1";
         public const string DefaultProtocolVersion = "2025-06-18";
 
         public static string Handle(string body)
@@ -97,8 +97,8 @@ namespace RevitMcp
         static JObject Initialize(JObject args)
         {
             // 클라이언트가 요청한 프로토콜 버전을 그대로 되돌려준다. 없으면 기본값.
-            string version = (string)args["protocolVersion"];
-            if (string.IsNullOrEmpty(version)) version = DefaultProtocolVersion;
+            string requested = (string)args["protocolVersion"];
+            string version = requested == "2024-11-05" || requested == "2025-03-26" || requested == DefaultProtocolVersion ? requested : DefaultProtocolVersion;
 
             string client = args["clientInfo"] != null ? args["clientInfo"].ToString(Formatting.None) : "?";
             Log.Info("initialize 수신 (protocolVersion=" + version + ", client=" + client + ")");
@@ -115,8 +115,9 @@ namespace RevitMcp
                 new JProperty("capabilities", caps),
                 new JProperty("serverInfo", info),
                 new JProperty("instructions",
-                    "Revit 2024 모델을 직접 조작하는 서버입니다. 모든 좌표와 치수는 밀리미터(mm) 단위로 주고받습니다. " +
-                    "정해진 도구로 표현하기 어려운 작업은 execute_code 로 C# 을 직접 실행하십시오."));
+                    "Revit 2024 서버입니다. 변경 전에 get_document_context로 expectedDocument/expectedRevision을 얻고 고유 requestId를 전달하십시오. " +
+                    "시간초과 후 새 ID로 재실행하지 말고 get_request_status를 조회하십시오. 전용 도구의 좌표는 mm, send_code_to_revit 코드는 Revit API 내부 단위입니다. " +
+                    "해석/CAD/간섭 기능은 API 구현 범위이며 모든 UI 명령을 지원하지 않습니다."));
         }
 
         static JObject Result(JToken id, JToken result)

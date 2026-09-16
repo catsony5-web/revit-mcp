@@ -75,7 +75,7 @@ namespace RevitMcp.Tools
                 CreatePointBased);
 
             ToolRegistry.Register("create_line_based_element",
-                "두 점을 잇는 선형 요소를 만든다. 벽이면 typeId 에 벽 유형을, 보·배관 등이면 해당 패밀리 유형을 준다. " +
+                "두 점을 잇는 벽 또는 선 기반 패밀리 요소를 만든다. 벽이면 typeId에 벽 유형을, 보는 해당 패밀리 유형을 준다. 배관·덕트 생성은 지원하지 않는다. " +
                 "모든 좌표는 mm.",
                 S.Obj()
                     .ObjArr("elements", "만들 요소 목록",

@@ -15,65 +15,94 @@ namespace RevitMcp
         TcpListener _listener;
         Thread _accept;
         volatile bool _running;
+        readonly object lifecycleGate = new object();
+        readonly HashSet<TcpClient> clients = new HashSet<TcpClient>();
+        long generation;
 
         public int Port { get; private set; }
         public bool IsRunning { get { return _running; } }
 
         public void Start(int port)
         {
-            if (_running) return;
-            Port = port;
-
-            // 127.0.0.1 로만 바인딩한다. 외부에서 접근할 수 없다.
-            _listener = new TcpListener(IPAddress.Loopback, port);
-            _listener.Start();
-            _running = true;
-
-            _accept = new Thread(AcceptLoop);
-            _accept.IsBackground = true;
-            _accept.Name = "RevitMcp-Accept";
-            _accept.Start();
+            lock (lifecycleGate)
+            {
+                if (_running) return;
+                if (port < 1 || port > 65535) throw new ArgumentOutOfRangeException("port", "Port must be 1..65535.");
+                TcpListener listener = new TcpListener(IPAddress.Loopback, port);
+                listener.Start();
+                try
+                {
+                    long currentGeneration = Dispatcher.Resume();
+                    _listener = listener; Port = port; generation = currentGeneration; _running = true;
+                    // Capture this listener; a previous accept thread must never use a new one.
+                    _accept = new Thread(delegate() { AcceptLoop(listener, currentGeneration); });
+                    _accept.IsBackground = true; _accept.Name = "RevitMcp-Accept"; _accept.Start();
+                }
+                catch { listener.Stop(); _running = false; Dispatcher.Pause(); throw; }
+            }
 
             Log.Info("MCP HTTP 서버 시작: http://127.0.0.1:" + port + "/mcp");
         }
 
         public void Stop()
         {
-            if (!_running) return;
-            _running = false;
-            try { _listener.Stop(); } catch { }
+            lock (lifecycleGate)
+            {
+                if (!_running) return;
+                _running = false;
+                Dispatcher.Pause();
+                try { _listener.Stop(); } catch { }
+                // Unblock old partial reads and release connection slots immediately.
+                foreach (TcpClient client in clients) { try { client.Close(); } catch { } }
+                clients.Clear();
+            }
             Log.Info("MCP HTTP 서버 정지");
         }
 
-        void AcceptLoop()
+        bool IsCurrent(long expectedGeneration)
         {
-            while (_running)
+            lock (lifecycleGate) return _running && generation == expectedGeneration;
+        }
+
+        void AcceptLoop(TcpListener listener, long expectedGeneration)
+        {
+            while (IsCurrent(expectedGeneration))
             {
                 TcpClient client = null;
-                try { client = _listener.AcceptTcpClient(); }
-                catch (SocketException) { if (!_running) break; continue; }
+                try { client = listener.AcceptTcpClient(); }
+                catch (SocketException) { if (!IsCurrent(expectedGeneration)) break; continue; }
                 catch (ObjectDisposedException) { break; }
                 catch (Exception ex) { Log.Error("Accept 실패", ex); continue; }
 
                 TcpClient c = client;
-                ThreadPool.QueueUserWorkItem(delegate { HandleClient(c); });
+                lock (lifecycleGate)
+                {
+                    if (!_running || generation != expectedGeneration || clients.Count >= 32) { c.Close(); continue; }
+                    clients.Add(c);
+                }
+                ThreadPool.QueueUserWorkItem(delegate { try { HandleClient(c, expectedGeneration); } finally { lock (lifecycleGate) clients.Remove(c); } });
             }
         }
 
-        void HandleClient(TcpClient client)
+        void HandleClient(TcpClient client, long expectedGeneration)
         {
             try
             {
                 client.NoDelay = true;
+                client.ReceiveTimeout = 30000;
+                client.SendTimeout = 30000;
                 using (NetworkStream stream = client.GetStream())
                 {
                     // keep-alive: 같은 연결로 여러 요청이 올 수 있다.
-                    while (_running && client.Connected)
+                    while (IsCurrent(expectedGeneration) && client.Connected)
                     {
                         Request req = ReadRequest(stream);
-                        if (req == null) break;
+                        if (req == null || !IsCurrent(expectedGeneration)) break;
 
-                        Response res = Route(req);
+                        Response res = Dispatcher.InServerRequest(expectedGeneration, delegate { return Route(req); });
+                        if (!IsCurrent(expectedGeneration)) break;
+                        string connection;
+                        if (req.Headers.TryGetValue("Connection", out connection) && string.Equals(connection, "close", StringComparison.OrdinalIgnoreCase)) res.KeepAlive = false;
                         WriteResponse(stream, res);
                         if (!res.KeepAlive) break;
                     }
@@ -112,6 +141,7 @@ namespace RevitMcp
                 int b = stream.ReadByte();
                 if (b < 0) return null;
                 head.WriteByte((byte)b);
+                if (head.Length > 32768) throw new IOException("HTTP header exceeds 32 KiB.");
                 if ((state == 0 || state == 2) && b == 13) state++;
                 else if ((state == 1 || state == 3) && b == 10) state++;
                 else state = (b == 13) ? 1 : 0;
@@ -135,10 +165,12 @@ namespace RevitMcp
             }
 
             string cl;
+            if (req.Headers.ContainsKey("Transfer-Encoding")) throw new IOException("Chunked request bodies are not supported. Send Content-Length.");
             if (req.Headers.TryGetValue("Content-Length", out cl))
             {
                 int len;
-                if (int.TryParse(cl, out len) && len > 0)
+                if (!int.TryParse(cl, out len) || len < 0 || len > 8388608) throw new IOException("Invalid Content-Length; maximum 8 MiB.");
+                if (len > 0)
                 {
                     byte[] buf = new byte[len];
                     int got = 0;
@@ -160,8 +192,10 @@ namespace RevitMcp
             string origin;
             if (req.Headers.TryGetValue("Origin", out origin) && !string.IsNullOrEmpty(origin))
             {
-                if (origin.IndexOf("localhost", StringComparison.OrdinalIgnoreCase) < 0 &&
-                    origin.IndexOf("127.0.0.1", StringComparison.OrdinalIgnoreCase) < 0)
+                Uri parsedOrigin;
+                if (!Uri.TryCreate(origin, UriKind.Absolute, out parsedOrigin) ||
+                    (parsedOrigin.Scheme != "http" && parsedOrigin.Scheme != "https") ||
+                    (parsedOrigin.Host != "localhost" && parsedOrigin.Host != "127.0.0.1" && parsedOrigin.Host != "[::1]"))
                 {
                     return new Response { Status = 403, StatusText = "Forbidden", Body = "{\"error\":\"origin not allowed\"}" };
                 }

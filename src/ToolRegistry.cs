@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using Newtonsoft.Json;
@@ -17,6 +18,7 @@ namespace RevitMcp
         public JObject InputSchema;
         public ToolHandler Handler;
         public bool NeedsRevit = true;
+        public bool Mutation;
     }
 
     internal static class ToolRegistry
@@ -40,6 +42,21 @@ namespace RevitMcp
             d.InputSchema = schema.Build();
             d.Handler = handler;
             d.NeedsRevit = needsRevit;
+            // Unknown new Revit tools default to guarded mutation. Read-only additions must be listed explicitly.
+            d.Mutation = needsRevit && !IsReadOnly(name);
+            if (needsRevit)
+            {
+                JObject props = (JObject)d.InputSchema["properties"];
+                props["requestId"] = new JObject(new JProperty("type", "string"), new JProperty("description", "Unique operation ID. Retry the same operation with the SAME ID; use get_request_status after a timeout."));
+                props["expectedDocument"] = new JObject(new JProperty("type", "string"), new JProperty("description", "Opaque active-document token from get_document_context."));
+                props["expectedRevision"] = new JObject(new JProperty("type", "integer"), new JProperty("description", "Document revision from get_document_context."));
+                if (d.Mutation)
+                {
+                    JArray required = d.InputSchema["required"] as JArray ?? new JArray();
+                    foreach (string key in new[] { "requestId", "expectedDocument", "expectedRevision" }) if (!required.Any(v => (string)v == key)) required.Add(key);
+                    d.InputSchema["required"] = required;
+                }
+            }
 
             if (_byName.ContainsKey(name))
             {
@@ -76,18 +93,30 @@ namespace RevitMcp
             JObject args = A.Obj(callParams, "arguments");
             if (args == null) args = new JObject();
 
-            int timeout = Config.ClampTimeout(A.Has(args, "timeoutMs") ? (int?)A.Int(args, "timeoutMs", 0) : null);
-
             try
             {
+                Validate(args, def.InputSchema, "arguments");
+                int timeout = Config.ClampTimeout(A.Has(args, "timeoutMs") ? (int?)A.Int(args, "timeoutMs", 0) : null);
                 object result;
                 if (def.NeedsRevit)
                 {
                     ToolDef captured = def;
-                    JObject capturedArgs = args;
-                    result = Dispatcher.Invoke(
-                        delegate(UIApplication uiapp) { return captured.Handler(uiapp, capturedArgs); },
-                        timeout);
+                    JObject capturedArgs = (JObject)args.DeepClone();
+                    string requestId = A.Str(args, "requestId", Guid.NewGuid().ToString("N"));
+                    JObject state = Dispatcher.Invoke(delegate(UIApplication uiapp)
+                    {
+                        DocumentGuard.Check(uiapp, capturedArgs, captured.Mutation);
+                        object output = captured.Handler(uiapp, capturedArgs);
+                        Document doc = uiapp.ActiveUIDocument == null ? null : uiapp.ActiveUIDocument.Document;
+                        return new JObject(new JProperty("output", output == null ? null : (output as JToken) ?? JToken.FromObject(output)), new JProperty("document", doc == null ? null : DocumentGuard.Describe(doc)));
+                    }, requestId, RequestQueue.Fingerprint(name, capturedArgs), name, def.Mutation, timeout);
+                    bool succeeded = (string)state["status"] == "succeeded";
+                    bool pending = (string)state["status"] == "queued" || (string)state["status"] == "running";
+                    JObject response = TextResult(succeeded ? Stringify(state["result"]["output"]) : state.ToString(Formatting.None), !succeeded && !pending);
+                    JObject meta = new JObject(new JProperty("requestId", requestId), new JProperty("status", state["status"]));
+                    if (succeeded) meta["document"] = state["result"]["document"];
+                    response["_meta"] = meta;
+                    return response;
                 }
                 else
                 {
@@ -103,6 +132,35 @@ namespace RevitMcp
                     msg += " -> " + ex.InnerException.GetType().Name + ": " + ex.InnerException.Message;
                 return TextResult("[" + name + "] 실행 실패\n" + msg, true);
             }
+        }
+
+        static bool IsReadOnly(string name)
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+                "say_hello", "get_current_view_info", "get_current_view_elements", "get_selected_elements", "ai_element_filter", "get_available_family_types", "get_material_quantities", "analyze_model_statistics", "export_room_data",
+                "get_document_context", "get_analysis_capabilities", "get_energy_settings", "get_energy_model", "get_spatial_energy_diagnostics", "get_systems_analysis_status", "scan_clashes", "plan_cad_layout"
+            }.Contains(name);
+        }
+        static void Validate(JToken value, JObject schema, string path)
+        {
+            string type = (string)schema["type"];
+            if (type != null)
+            {
+                bool valid = type == "object" ? value is JObject : type == "array" ? value is JArray : type == "string" ? value.Type == JTokenType.String : type == "boolean" ? value.Type == JTokenType.Boolean : type == "integer" ? value.Type == JTokenType.Integer : type == "number" ? value.Type == JTokenType.Integer || value.Type == JTokenType.Float : true;
+                if (!valid) throw new ArgumentException(path + " must be " + type);
+            }
+            JArray allowed = schema["enum"] as JArray;
+            if (allowed != null && !allowed.Any(v => JToken.DeepEquals(v, value))) throw new ArgumentException(path + " has an unsupported value.");
+            JObject obj = value as JObject;
+            if (obj != null)
+            {
+                JArray required = schema["required"] as JArray;
+                if (required != null) foreach (JToken item in required) if (obj[(string)item] == null || obj[(string)item].Type == JTokenType.Null) throw new ArgumentException(path + "." + item + " is required.");
+                JObject props = schema["properties"] as JObject;
+                if (props != null) foreach (JProperty p in obj.Properties()) if (props[p.Name] is JObject) Validate(p.Value, (JObject)props[p.Name], path + "." + p.Name);
+            }
+            JArray array = value as JArray;
+            if (array != null && schema["items"] is JObject) for (int i = 0; i < array.Count; i++) Validate(array[i], (JObject)schema["items"], path + "[" + i + "]");
         }
 
         static string Stringify(object result)
@@ -151,10 +209,12 @@ namespace RevitMcp
             using (Transaction t = new Transaction(doc, name))
             {
                 t.Start();
+                t.SetFailureHandlingOptions(t.GetFailureHandlingOptions().SetClearAfterRollback(true).SetFailuresPreprocessor(new RollbackErrors()));
                 try
                 {
                     T r = body();
-                    t.Commit();
+                    TransactionStatus status = t.Commit();
+                    if (status != TransactionStatus.Committed) throw new InvalidOperationException("Transaction did not commit: " + status);
                     return r;
                 }
                 catch
@@ -306,6 +366,16 @@ namespace RevitMcp
                 }
             }
             return BuiltInCategory.INVALID;
+        }
+    }
+
+    internal sealed class RollbackErrors : IFailuresPreprocessor
+    {
+        public FailureProcessingResult PreprocessFailures(FailuresAccessor accessor)
+        {
+            foreach (FailureMessageAccessor message in accessor.GetFailureMessages())
+                if (message.GetSeverity() == FailureSeverity.Error) return FailureProcessingResult.ProceedWithRollBack;
+            return FailureProcessingResult.Continue;
         }
     }
 }

@@ -10,8 +10,10 @@ $ErrorActionPreference = 'Stop'
 $outDir  = Join-Path $PSScriptRoot 'artifacts\2024\RevitMcp'
 $revit   = $RevitDir
 $fail    = 0
+$checks  = 0
 
 function Check($name, $cond, $detail) {
+    $script:checks++
     if ($cond) {
         Write-Host ("  [OK]   " + $name) -ForegroundColor Green
     } else {
@@ -54,7 +56,7 @@ $registry = $asm.GetType('RevitMcp.ToolRegistry')
 $count = $registry.GetProperty('Count', $flags).GetValue($null)
 Write-Host ''
 Write-Host ("등록된 도구: " + $count + "개")
-Check "도구가 20개 이상 등록됨" ($count -ge 20) ("실제: " + $count)
+Check "도구가 47개 등록됨" ($count -eq 47) ("실제: " + $count)
 
 # 2) JSON-RPC 진입점
 $proto  = $asm.GetType('RevitMcp.McpProtocol')
@@ -71,6 +73,8 @@ Check "id 가 그대로 반환됨" ($o.id -eq 1) $r
 Check "protocolVersion 반향" ($o.result.protocolVersion -eq '2025-06-18') $r
 Check "tools capability 선언" ($null -ne $o.result.capabilities.tools) $r
 Check "serverInfo.name 존재" ($o.result.serverInfo.name -eq 'revit-mcp') $r
+$fallback = (Rpc '{"jsonrpc":"2.0","id":101,"method":"initialize","params":{"protocolVersion":"2099-01-01"}}') | ConvertFrom-Json
+Check '미지원 프로토콜 버전을 그대로 반향하지 않음' ($fallback.result.protocolVersion -eq '2025-06-18') ''
 
 Write-Host ''
 Write-Host '--- notifications/initialized (알림은 응답 없음) ---'
@@ -100,6 +104,16 @@ Check "모든 inputSchema.type 이 object" ($badSchema.Count -eq 0) ($badSchema.
 
 $dupes = @($tools | Group-Object name | Where-Object { $_.Count -gt 1 })
 Check "도구 이름 중복 없음" ($dupes.Count -eq 0) (($dupes | ForEach-Object { $_.Name }) -join ',')
+
+$writes = @('send_code_to_revit','update_energy_settings','create_energy_model','export_energy_gbxml','request_systems_analysis','cancel_systems_analysis','create_clash_review_views','apply_cad_layout')
+foreach ($write in $writes) {
+    $tool = $tools | Where-Object name -eq $write
+    Check ($write + ' 문서·요청 보호 인자 필수') (($tool.inputSchema.required -contains 'requestId') -and ($tool.inputSchema.required -contains 'expectedDocument') -and ($tool.inputSchema.required -contains 'expectedRevision')) ''
+}
+$local = $tools | Where-Object name -eq 'get_request_status'
+Check '상태 조회에 Revit 문서 토큰 불필요' ($local.inputSchema.required -notcontains 'expectedDocument') ''
+$context = $tools | Where-Object name -eq 'get_document_context'
+Check '최초 문맥 조회에 문서 토큰 불필요' ($context.inputSchema.required -notcontains 'expectedDocument') ''
 
 Write-Host ''
 Write-Host '--- 오류 처리 ---'
@@ -131,7 +145,7 @@ $tools | Sort-Object name | ForEach-Object {
 
 Write-Host ''
 if ($fail -eq 0) {
-    Write-Host '=== 전부 통과 ===' -ForegroundColor Green
+    Write-Host ("=== " + $checks + "개 전부 통과 ===") -ForegroundColor Green
     exit 0
 } else {
     Write-Host ("=== 실패 " + $fail + "건 ===") -ForegroundColor Red

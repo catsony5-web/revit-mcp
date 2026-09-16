@@ -1,5 +1,7 @@
 # Revit MCP — Revit 2024 로컬 서버
 
+> **2.0.0-preview.1 개발판:** 요청·문서·복구 보호와 해석·간섭·CAD 도구를 추가했습니다. 변경 요청 인자가 달라졌으며, 실제 Revit 모델 검증 전입니다. [안정성/호출 계약](docs/STABILITY.md)과 [검증 범위](docs/VALIDATION.md)를 먼저 확인하세요.
+
 Revit 애드인 안에서 HTTP MCP 서버를 직접 실행하는 C# 프로젝트입니다. AI 클라이언트가 모델 요소를 조회·생성·수정하고, C# 코드로 Revit API를 호출할 수 있습니다. 별도의 Node.js 서버나 운영자 승인 서버는 사용하지 않습니다.
 
 ```text
@@ -13,12 +15,14 @@ MCP 클라이언트 → http://127.0.0.1:8090/mcp → RevitMcp.dll → Revit API
 Git이 설치되어 있다면 PowerShell에서 다음을 실행하세요. 먼저 Revit 작업을 저장하고 모든 Revit 창을 종료합니다.
 
 ```powershell
-git clone https://github.com/catsony5-web/revit-mcp.git
+git clone --branch feature/revit-workflows-preview --single-branch https://github.com/catsony5-web/revit-mcp.git
 cd revit-mcp
 powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -Install
 ```
 
 Git이 없다면 **Code → Download ZIP**을 내려받아 압축을 풀고, 해당 폴더에서 마지막 명령을 실행하면 됩니다. Fork는 자신의 GitHub 계정에 저장소 사본을 만드는 기능이며 설치에 필수는 아닙니다.
+
+위 명령은 이번 시험판 브랜치를 복제합니다. GitHub에서 ZIP을 받을 때도 `feature/revit-workflows-preview` 브랜치를 먼저 선택합니다. `main`에는 기존 공개판을 유지합니다.
 
 설치 후 Revit을 실행하고 `부가 기능 > MCP`에서 서버를 확인한 뒤, AI 클라이언트의 HTTP MCP 주소에 **`http://127.0.0.1:8090/mcp`**를 등록하세요. 클라이언트 연결 예시는 [examples/mcp-http.json](examples/mcp-http.json)에 있습니다. 클라이언트의 개인 설정 파일을 자동으로 덮어쓰지는 않습니다.
 
@@ -29,11 +33,17 @@ Git이 없다면 **Code → Download ZIP**을 내려받아 압축을 풀고, 해
 ## 주요 기능
 
 - 활성 뷰·선택 요소·패밀리 유형·물량·모델 통계 조회
-- 레벨·그리드·룸·벽·보·배관·바닥 등 요소 생성
+- 레벨·그리드·룸·벽·선 기반 패밀리·바닥 등 요소 생성
 - 요소의 파라미터·위치·회전·유형 변경, 삭제, 색상 지정
 - 치수·룸 태그·벽 태그, 룸 데이터 내보내기
 - 프로젝트·룸 정보 및 재사용 C# 코드 조각의 로컬 JSON 보관
 - `send_code_to_revit`으로 C# 코드 실행
+- 요청 중복 방지·대상 문서/수정번호 검사·대기 취소·결과 복구 조회
+- [해석 도구 10개](docs/ANALYSIS.md): 에너지 설정, 해석모델, 공간 진단, gbXML, 시스템 해석 요청/취소/조회
+- [간섭 검사와 3D 검토 뷰](docs/CLASH.md): 호스트/링크 솔리드 교차, 범위·누락 보고, 결과별 섹션박스·색상
+- [CAD 폴더 초기 배치](docs/CAD.md): 층/분야 분류, 레벨/평면뷰 계획, DWG/DXF 일괄 링크
+
+해석 탭 전체, DWG 내부 도면의 의미 해석·여러 층 자동 분리, CAD를 BIM 요소로 자동 변환하는 기능은 아직 구현하지 않았습니다. 배관·덕트 생성은 전용 생성 도구가 없으며 필요한 경우 C# API 코드로 별도 처리합니다.
 
 실제 도구 이름·입력은 `tools/list`에 노출됩니다. 등록된 도구 수와 검사 범위는 검증 기록에 남깁니다. Revit 작업별 성공 여부는 대상 모델의 상태·패밀리·호스트·권한에 따라 달라집니다.
 
@@ -64,12 +74,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test-protocol.ps1
 
 ```json
 {
+  "requestId": "code-inspect-001",
+  "expectedDocument": "<get_document_context active.expectedDocument>",
+  "expectedRevision": 0,
   "code": "return new { title = doc.Title };",
   "transactionMode": "none"
 }
 ```
 
 위 입력은 `send_code_to_revit`의 인자입니다. `doc`/`document`, `uidoc`, `uiapp`, `app`, `parameters`를 사용할 수 있습니다.
+
+`expectedRevision`은 예시이며 실제 조회값을 사용합니다. 읽기 코드여도 임의 C# 도구에는 세 보호 인자가 필요합니다. 같은 요청을 재전송할 때는 ID와 인자를 유지하고, 불명확한 결과는 `get_request_status`로 조회합니다.
 
 | transactionMode | 동작 |
 |---|---|
@@ -83,7 +98,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test-protocol.ps1
 
 - 서버는 IPv4 루프백에 바인딩하며 인증 기능은 없습니다. 포트 전달·공개 프록시를 통한 외부 공개용으로 설계되지 않았습니다.
 - 단일 JSON 응답을 사용하며 SSE 스트림은 제공하지 않습니다. 모든 MCP 클라이언트·프로토콜 버전에 대한 적합성을 보장하지 않습니다.
-- 타임아웃과 취소 알림이 이미 시작한 모델 작업의 중단을 보장하지 않습니다. 결과가 불분명하면 재실행 전에 모델 상태를 확인하세요.
+- 대기 시간초과는 시작 전 작업만 취소합니다. 실행 중인 작업은 요청 ID로 결과를 조회합니다. 재시작 후 불확실한 요청을 자동 재실행하지 않습니다.
 - Windows 정책이 서명되지 않은 DLL을 차단할 수 있습니다. 조직의 승인·코드 서명 절차를 따르세요.
 - `test-protocol.ps1`은 별도 PowerShell 프로세스에서 생성된 DLL의 프로토콜 계층을 검사합니다. 열린 Revit 서버에는 접속하지 않습니다.
 - `test-live.ps1 -AllowLiveTest`는 Revit 조회·C# 실행 및 로컬 저장소 쓰기를 수행합니다. 별도로 준비한 시험 모델에서만 실행하세요. 이번 공개 작업에서는 실행하지 않았습니다.
